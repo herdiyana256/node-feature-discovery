@@ -660,9 +660,31 @@ func (m *nfdMaster) getAndMergeNodeFeatures(nodeName string) (*nfdv1alpha1.NodeF
 	return nodeFeatures, foundInCache, nil
 }
 
-// isThirdPartyNodeFeature determines whether a node feature is a third party one or created by nfd-worker
+// isThirdPartyNodeFeature determines whether a node feature is a third party one or created by nfd-worker.
+//
+// Namespace and name are chosen by whoever creates the object, so on their own they cannot
+// tell nfd-worker's object apart from one that merely imitates it: anything able to create
+// a NodeFeature in nfd-master's namespace can name it after a node and be taken for that
+// node's worker. An object is therefore only treated as nfd-worker's own when it also
+// carries one of the owner references nfd-worker attaches to what it publishes. Objects
+// without one are treated as third party, so the restriction fails closed.
 func (m *nfdMaster) isThirdPartyNodeFeature(nodeFeature nfdv1alpha1.NodeFeature, nodeName, namespace string) bool {
-	return nodeFeature.Namespace != namespace || nodeFeature.Name != nodeName
+	if nodeFeature.Namespace != namespace || nodeFeature.Name != nodeName {
+		return true
+	}
+	return !hasWorkerOwnerReference(nodeFeature.OwnerReferences)
+}
+
+// hasWorkerOwnerReference reports whether the object carries an owner reference of a kind
+// that nfd-worker sets on the NodeFeature objects it publishes.
+func hasWorkerOwnerReference(ownerReferences []metav1.OwnerReference) bool {
+	for _, ownerReference := range ownerReferences {
+		switch ownerReference.Kind {
+		case "Pod", "DaemonSet", "Node":
+			return true
+		}
+	}
+	return false
 }
 
 func (m *nfdMaster) nfdAPIUpdateOneNode(cli k8sclient.Interface, node *corev1.Node) error {

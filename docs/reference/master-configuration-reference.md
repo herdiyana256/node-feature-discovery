@@ -400,6 +400,16 @@ restrictions:
 The `denyNodeFeatureLabels` option specifies whether to deny labels from 3rd party
 NodeFeature objects or not. NodeFeature objects created by nfd-worker are not affected.
 
+An object counts as nfd-worker's own when it is in nfd-master's namespace, is named after
+the node it describes, and carries an owner reference to the Pod, DaemonSet or Node that
+published it. Namespace and name alone are chosen by whoever creates the object, so they
+cannot distinguish nfd-worker's object from one that imitates it. Objects without such an
+owner reference are treated as 3rd party, so the restriction fails closed.
+
+If you run nfd-worker with `core.noOwnerRefs: true`, or with `core.ownerRefs` set to an
+empty list, its NodeFeature objects carry no owner reference and this restriction will deny
+their labels too. Leave owner references enabled on nfd-worker when using this option.
+
 Default: false
 
 Example:

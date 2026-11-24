@@ -1325,3 +1325,90 @@ func TestUnprefixedKeysAreRemoved(t *testing.T) {
 		})
 	})
 }
+
+func TestIsThirdPartyNodeFeature(t *testing.T) {
+	Convey("When deciding whether a NodeFeature came from nfd-worker", t, func() {
+		fakeMaster := newFakeMaster()
+		nfdNamespace := "node-feature-discovery"
+		nodeName := "node-1"
+
+		workerOwnerRefs := []metav1.OwnerReference{
+			{APIVersion: "v1", Kind: "Pod", Name: "nfd-worker-abcde"},
+		}
+
+		Convey("an object published by nfd-worker is not third party", func() {
+			nodeFeature := nfdv1alpha1.NodeFeature{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            nodeName,
+					Namespace:       nfdNamespace,
+					OwnerReferences: workerOwnerRefs,
+				},
+			}
+
+			So(fakeMaster.isThirdPartyNodeFeature(nodeFeature, nodeName, nfdNamespace), ShouldBeFalse)
+		})
+
+		Convey("an object in another namespace is third party", func() {
+			nodeFeature := nfdv1alpha1.NodeFeature{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            nodeName,
+					Namespace:       "tenant",
+					OwnerReferences: workerOwnerRefs,
+				},
+			}
+
+			So(fakeMaster.isThirdPartyNodeFeature(nodeFeature, nodeName, nfdNamespace), ShouldBeTrue)
+		})
+
+		Convey("an object named after something other than the node is third party", func() {
+			nodeFeature := nfdv1alpha1.NodeFeature{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "vendor-features",
+					Namespace:       nfdNamespace,
+					OwnerReferences: workerOwnerRefs,
+				},
+			}
+
+			So(fakeMaster.isThirdPartyNodeFeature(nodeFeature, nodeName, nfdNamespace), ShouldBeTrue)
+		})
+
+		Convey("an object named after the node but owned by nothing is third party", func() {
+			// Namespace and name are picked by whoever creates the object, so without an
+			// owner reference they do not show that nfd-worker published it.
+			nodeFeature := nfdv1alpha1.NodeFeature{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      nodeName,
+					Namespace: nfdNamespace,
+				},
+			}
+
+			So(fakeMaster.isThirdPartyNodeFeature(nodeFeature, nodeName, nfdNamespace), ShouldBeTrue)
+		})
+
+		Convey("every owner reference kind nfd-worker can set is recognised", func() {
+			for _, kind := range []string{"Pod", "DaemonSet", "Node"} {
+				nodeFeature := nfdv1alpha1.NodeFeature{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            nodeName,
+						Namespace:       nfdNamespace,
+						OwnerReferences: []metav1.OwnerReference{{Kind: kind, Name: "owner"}},
+					},
+				}
+
+				So(fakeMaster.isThirdPartyNodeFeature(nodeFeature, nodeName, nfdNamespace), ShouldBeFalse)
+			}
+		})
+
+		Convey("an unrelated owner reference kind does not pass", func() {
+			nodeFeature := nfdv1alpha1.NodeFeature{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            nodeName,
+					Namespace:       nfdNamespace,
+					OwnerReferences: []metav1.OwnerReference{{Kind: "ConfigMap", Name: "decoy"}},
+				},
+			}
+
+			So(fakeMaster.isThirdPartyNodeFeature(nodeFeature, nodeName, nfdNamespace), ShouldBeTrue)
+		})
+	})
+}
